@@ -18,15 +18,20 @@ def is_time_between(begin_time, end_time, check_time=None):
 
 
 @click.command()
-@click.option('-f', '--folder', 'image_folder', help='ZoneMinder Camera Folder')
-@click.option('-n', '--name', 'output_name', help='Output file Name')
+@click.option('-f', '--folder', 'image_folder', help='ZoneMinder Camera Folder', prompt=True)
+@click.option('-n', '--name', 'output_name', help='Output file Name', prompt=True)
 @click.option('--fps', default=30, help='Frames per second')
-@click.option('--frame_skip', default=0, help='Frame Skip Rate')
-@click.option('-d', '--days_since_today', default=50, help='Days to render in timelapse before today')
-@click.option('--daytime_only', default=False, help='Only include daytime in timelapse')
+@click.option('--frame-skip', 'frame_skip', default=0, help='Frame Skip Rate')
+@click.option('-d', '--days-since-today', 'days_since_today', default=50,
+              help='Days to render in timelapse before today')
+@click.option('--daytime-only', 'daytime_only', default=False, help='Only include daytime in timelapse')
 @click.option('--cuda', default=False, help='Render timelapse with CUDA FFMPEG extensions')
+@click.help_option('-h')
 def create_timelapse(image_folder, output_name, frame_skip=0, days_since_today=50, fps=30, daytime_only=False,
                      cuda=False):
+    """
+    Example: python main.py -f 'zoneminder/zm_camera_1' -n 'test' --fps 30 --frame_skip 150
+    """
     frame_skip_counter = 0
     base = datetime.today()
     date_list = [(base - timedelta(days=x)).strftime('%Y-%m-%d') for x in range(days_since_today)]
@@ -92,7 +97,6 @@ def create_timelapse(image_folder, output_name, frame_skip=0, days_since_today=5
     # os.system('rm -f image_list.temp')
 
 
-# create_timelapse('zoneminder/zm_camera_1', frame_skip=20, days_since_today=20, fps=90, output_name='street')
 if __name__ == '__main__':
     create_timelapse()
     exit(0)
