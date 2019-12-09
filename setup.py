@@ -6,6 +6,7 @@ setup(
     py_modules=['timelapse_generator'],
     install_requires=[
         'Click',
+        'qprompt'
     ],
     url='',
     license='MIT',

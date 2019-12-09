@@ -3,6 +3,7 @@ import subprocess
 import re
 import click
 from datetime import datetime, time, timedelta
+import qprompt
 
 
 def is_time_between(begin_time, end_time, check_time=None):
@@ -14,22 +15,40 @@ def is_time_between(begin_time, end_time, check_time=None):
         return check_time >= begin_time or check_time <= end_time
 
 
-
 @click.command()
-@click.option('-f', '--folder', 'image_folder', help='ZoneMinder Camera Folder', prompt=True)
+@click.option('-f', '--folder', 'image_folder', help='ZoneMinder Camera Folder', prompt=True,
+              envvar='ZM_TIMELAPSE_FOLDER')
 @click.option('-n', '--name', 'output_name', help='Output file Name', prompt=True)
 @click.option('--fps', default=30, help='Frames per second')
 @click.option('--frame-skip', 'frame_skip', default=0, help='Frame Skip Rate')
-@click.option('-d', '--days-since-today', 'days_since_today', default=50,
-              help='Days to render in timelapse before today')
-@click.option('--daytime-only', 'daytime_only', default=False, help='Only include daytime in timelapse')
-@click.option('--cuda', default=False, help='Render timelapse with CUDA FFMPEG extensions')
+@click.option('-d', '--days-since-today', 'days_since_today', default=5,
+              help='Number of days to include in the timelapse before today')
+@click.option('--daytime-only', 'daytime_only', default=False, help='Only include images created between time(11, 00),'
+                                                                    'time(21, 30) in timelapse')
+@click.option('--cuda', is_flag=True, default=False, help='Render timelapse with CUDA FFMPEG extensions')
+@click.option('--ffmpeg-binary', 'ffmpeg_binary', default='ffmpeg', help='Alternate FFMPEG binary location',
+              envvar='ZM_TIMELAPSE_FFMPEG_BINARY')
+@click.option('--codec', help='FFMPEG Encoding codec', envvar='ZM_TIMELAPSE_CODEC')
 @click.help_option('-h')
-def create_timelapse(image_folder, output_name, frame_skip=0, days_since_today=50, fps=30, daytime_only=False,
-                     cuda=False):
+def create_timelapse(image_folder, output_name, frame_skip=0, days_since_today=5, fps=30, daytime_only=False,
+                     cuda=False, ffmpeg_binary='ffmpeg', codec=None):
     """
-    Example: python main.py -f 'zoneminder/zm_camera_1' -n 'test' --fps 30 --frame_skip 150
+    Example: zm-timelapse -f 'zoneminder/zm_camera_1' -n 'test' --fps 30 --frame-skip 150 --codec libx264
+
+    Environment Variables:
+    ZM_TIMELAPSE_FOLDER: --folder
+    ZM_TIMELAPSE_CODEC: --codec
+    ZM_TIMELAPSE_FFMPEG_BINARY: --ffmpeg-binary
+
     """
+    if not codec:
+        menu = qprompt.Menu()
+        menu.add("1", "libx264")
+        menu.add("2", "libx265")
+        if cuda:
+            menu.add('3', "hevc_nvenc")
+            menu.add('4', 'h264_nvenc')
+        codec = menu.show(returns="desc", header='Select a FFMPEG Codec')
     frame_skip_counter = 0
     base = datetime.today()
     date_list = [(base - timedelta(days=x)).strftime('%Y-%m-%d') for x in range(days_since_today)]
@@ -71,11 +90,12 @@ def create_timelapse(image_folder, output_name, frame_skip=0, days_since_today=5
 
     ffmpeg_str = ''
     if cuda:
-        ffmpeg_str = '~/bin/ffmpeg -threads 8 -hwaccel cuvid -c:v mjpeg_cuvid -r {} -y -safe 0 ' '-f concat' \
-                     ' -i br_last3_image_files -c:v hevc_nvenc -c:a ac3 -preset slow -b:v 8M GPU_{}'\
-            .format(fps, final_name)
+        ffmpeg_str = '{} -threads 8 -hwaccel cuvid -c:v mjpeg_cuvid -r {} -y -safe 0 ' '-f concat' \
+                     ' -i .image_list.temp -c:v {} -c:a ac3 -preset slow -b:v 8M GPU_{}' \
+            .format(ffmpeg_binary, fps, codec, final_name)
     else:
-        ffmpeg_str = 'ffmpeg -r {} -y -safe 0 -f concat -i .image_list.temp -b:v 8M {}'.format(fps, final_name)
+        ffmpeg_str = '{} -r {} -y -safe 0 -f concat -i .image_list.temp -c:v {} -crf 28 -b:v 8M {}' \
+            .format(ffmpeg_binary, fps, codec, final_name)
     with click.progressbar(length=frame_count,
                            label='Rendering Timelapse') as bar:
         process = subprocess.Popen(ffmpeg_str, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -84,12 +104,16 @@ def create_timelapse(image_folder, output_name, frame_skip=0, days_since_today=5
         while process.returncode is None:
             # handle output by direct access to stdout and stderr
             for line in process.stderr:
-                if str(line).startswith('frame= '):
+                # print(line)
+                if str(line).startswith('frame='):
                     frame = re.findall('(\.?\d*)\W?(?:fps|P)', line)
                     if frame:
                         # print(line)
-                        bar.update(int(frame[0])-last_frame_count)
+                        curr_frame_count = int(frame[0]) - last_frame_count
                         last_frame_count = int(frame[0])
+                        bar.update(curr_frame_count)
+
+
             # set returncode if the process has exited
             process.poll()
     os.system('rm -f .image_list.temp')
