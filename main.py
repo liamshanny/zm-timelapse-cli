@@ -66,30 +66,30 @@ def create_timelapse(image_folder, output_name, frame_skip=0, days_since_today=5
     text_file.close()
     print('{} frames to render'.format(frame_count))
 
+    ffmpeg_str = ''
     if cuda:
-        os.system('~/bin/ffmpeg -threads 8 -hwaccel cuvid -c:v mjpeg_cuvid -r {} -y -safe 0 ' \
-                  '-f concat -i br_last3_image_files -c:v hevc_nvenc -c:a ac3 -preset slow -b:v 8M GPU_{}'
-                  .format(fps, final_name))
-
+        ffmpeg_str = '~/bin/ffmpeg -threads 8 -hwaccel cuvid -c:v mjpeg_cuvid -r {} -y -safe 0 ' '-f concat' \
+                     ' -i br_last3_image_files -c:v hevc_nvenc -c:a ac3 -preset slow -b:v 8M GPU_{}'\
+            .format(fps, final_name)
     else:
-        with click.progressbar(length=frame_count,
-                               label='Rendering Timelapse') as bar:
-            # os.system('ffmpeg -r {} -y -safe 0 -f concat -i image_list.temp -b:v 8M {}'.format(fps, final_name))
-            process = subprocess.Popen('ffmpeg -r {} -y -safe 0 -f concat -i image_list.temp -b:v 8M {}'.format(fps, final_name),
-                                       shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
-            last_frame_count = 0
-            while process.returncode is None:
-                # handle output by direct access to stdout and stderr
-                for line in process.stderr:
-                    if str(line).startswith('frame= '):
-                        frame = re.findall('(\.?\d*)\W?(?:fps|P)', line)
-                        if frame:
-                            # print(line)
-                            bar.update(int(frame[0])-last_frame_count)
-                            last_frame_count = int(frame[0])
-                # set returncode if the process has exited
-                process.poll()
-        # os.system('rm -f image_list.temp')
+        ffmpeg_str = 'ffmpeg -r {} -y -safe 0 -f concat -i image_list.temp -b:v 8M {}'.format(fps, final_name)
+    with click.progressbar(length=frame_count,
+                           label='Rendering Timelapse') as bar:
+        process = subprocess.Popen(ffmpeg_str, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   universal_newlines=True)
+        last_frame_count = 0
+        while process.returncode is None:
+            # handle output by direct access to stdout and stderr
+            for line in process.stderr:
+                if str(line).startswith('frame= '):
+                    frame = re.findall('(\.?\d*)\W?(?:fps|P)', line)
+                    if frame:
+                        # print(line)
+                        bar.update(int(frame[0])-last_frame_count)
+                        last_frame_count = int(frame[0])
+            # set returncode if the process has exited
+            process.poll()
+    # os.system('rm -f image_list.temp')
 
 
 # create_timelapse('zoneminder/zm_camera_1', frame_skip=20, days_since_today=20, fps=90, output_name='street')
