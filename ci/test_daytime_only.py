@@ -2,7 +2,7 @@
 import json
 import unittest
 from unittest.mock import patch
-import main
+import timelapse_generator
 from datetime import time, datetime
 
 class TestCLI(unittest.TestCase):

@@ -3,7 +3,7 @@ from setuptools import setup
 setup(
     name='zm-timelapse',
     version='.1',
-    py_modules=['main'],
+    py_modules=['timelapse_generator'],
     install_requires=[
         'Click',
     ],
@@ -14,6 +14,6 @@ setup(
     description='',
     entry_points='''
         [console_scripts]
-        zm-timelapse=main:create_timelapse
+        zm-timelapse=timelapse_generator:create_timelapse
     ''',
 )
