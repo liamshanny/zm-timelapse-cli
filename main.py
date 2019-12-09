@@ -66,7 +66,7 @@ def create_timelapse(image_folder, output_name, frame_skip=0, days_since_today=5
                             frame_count += 1
                             ffpeg_image_str += 'file \'{}\' \n'.format(img_file)
 
-    text_file = open('image_list.temp', "wt")
+    text_file = open('.image_list.temp', "wt")
     text_file.write(ffpeg_image_str)
     text_file.close()
     print('{} frames to render'.format(frame_count))
@@ -77,7 +77,7 @@ def create_timelapse(image_folder, output_name, frame_skip=0, days_since_today=5
                      ' -i br_last3_image_files -c:v hevc_nvenc -c:a ac3 -preset slow -b:v 8M GPU_{}'\
             .format(fps, final_name)
     else:
-        ffmpeg_str = 'ffmpeg -r {} -y -safe 0 -f concat -i image_list.temp -b:v 8M {}'.format(fps, final_name)
+        ffmpeg_str = 'ffmpeg -r {} -y -safe 0 -f concat -i .image_list.temp -b:v 8M {}'.format(fps, final_name)
     with click.progressbar(length=frame_count,
                            label='Rendering Timelapse') as bar:
         process = subprocess.Popen(ffmpeg_str, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -94,7 +94,7 @@ def create_timelapse(image_folder, output_name, frame_skip=0, days_since_today=5
                         last_frame_count = int(frame[0])
             # set returncode if the process has exited
             process.poll()
-    # os.system('rm -f image_list.temp')
+    os.system('rm -f .image_list.temp')
 
 
 if __name__ == '__main__':
