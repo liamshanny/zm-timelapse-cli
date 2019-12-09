@@ -9,4 +9,4 @@ class TestCLI(unittest.TestCase):
 
    def test_cli(self):
        date = datetime.now().time()
-       main.is_time_between(time(11, 00), time(21, 30), check_time=date)
+       timelapse_generator.is_time_between(time(11, 00), time(21, 30), check_time=date)
