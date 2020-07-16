@@ -2,7 +2,7 @@ import os
 import subprocess
 import re
 import click
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, tzinfo
 import qprompt
 
 
@@ -20,21 +20,26 @@ def is_time_between(begin_time, end_time, check_time=None):
               envvar='ZM_TIMELAPSE_FOLDER')
 @click.option('-n', '--name', 'output_name', help='Output file Name', prompt=True)
 @click.option('--frame-skip', 'frame_skip', default=0, help='Frame Skip Rate')
-@click.option('-d', '--days-since-today', 'days_since_today', default=5,
+@click.option('-d', '--days-since-now', 'days_since_now', default=None, type=int,
               help='Number of days to include in the timelapse before today')
-@click.option('--daytime-only', 'daytime_only', default=False, help='Only include images created between time(11, 00),'
-                                                                    'time(21, 30) in timelapse')
-
+@click.option('--hours-since-now', 'hours_since_now', default=None, type=int,
+              help='Number of days to include in the timelapse before today')
+@click.option('--daytime-only', 'daytime_only', is_flag=True, default=False,
+              help='Only include images created between time(11, 00),'
+                   'time(21, 30) in timelapse')
+@click.option('--sunrise', default='08', help='--daytime-only sunrise', type=int)
+@click.option('--sunset', default='20', help='--daytime-only sunset', type=int)
+@click.option('--timezone', 'timezone_string', default='US/Eastern', help='pytz Timezone code', type=str)
 @click.option('--ffmpeg-binary', 'ffmpeg_binary', default='ffmpeg', help='Alternate FFMPEG binary location',
               envvar='ZM_TIMELAPSE_FFMPEG_BINARY')
 @click.option('--codec', help='FFMPEG Encoding codec', envvar='ZM_TIMELAPSE_CODEC')
 @click.option('--cuda', is_flag=True, default=False, help='Render timelapse with CUDA FFMPEG extensions')
 @click.option('--fps', default=30, help='Frames per second')
-@click.option('--bitrate', default='8M', help='Video Bitrate', envvar='ZM_TIMELAPSE_BITRATE')
-
+@click.option('--quality', default='23', help='Video Quality. 0 is best, 51 is worst', envvar='ZM_TIMELAPSE_BITRATE')
 @click.help_option('-h')
-def create_timelapse(image_folder, output_name, frame_skip=0, days_since_today=5, fps=30, daytime_only=False,
-                     cuda=False, ffmpeg_binary='ffmpeg', codec=None, bitrate='8M'):
+def create_timelapse(image_folder, sunrise, sunset, timezone_string, output_name, quality, frame_skip=0,
+                     days_since_now=None, hours_since_now=None, fps=30, daytime_only=False,
+                     cuda=False, ffmpeg_binary='ffmpeg', codec=None):
     """
     Example: zm-timelapse -f 'zoneminder/zm_camera_1' -n 'test' --fps 30 --frame-skip 150 --codec libx264
 
@@ -55,19 +60,26 @@ def create_timelapse(image_folder, output_name, frame_skip=0, days_since_today=5
         codec = menu.show(returns="desc", header='Select a FFMPEG Codec')
     frame_skip_counter = 0
     base = datetime.today()
-    date_list = [(base - timedelta(days=x)).strftime('%Y-%m-%d') for x in range(days_since_today)]
+    # date_list = [(base - timedelta(days=x)).strftime('%Y-%m-%d') for x in range(days_since_now)]
+    if days_since_now:
+        offset = timedelta(days=days_since_now)
+    elif hours_since_now:
+        offset = timedelta(hours=hours_since_now)
+    else:
+        offset = timedelta(days=10000000)
     # print(date_list)
-    final_name = '{}_{}_{}-days_{}-fps.mp4'.format(output_name, base.strftime('%Y-%m-%d'), days_since_today, fps)
+    final_name = '{}_{}-days_{}fps.mp4'.format(output_name, datetime.now().strftime('%Y-%m-%d_%H:%M:%S'), fps)
     ffpeg_image_str = ''
     frame_count = 0
 
     print('Grabbing image files')
     for date_dir in sorted(os.listdir(image_folder)):
-        # print(date_dir)
-        if date_dir not in date_list:
+        if date_dir.endswith('.log'):
             continue
         for event in sorted(os.listdir(os.path.join(image_folder, date_dir))):
-            # print(event)
+            event_date = datetime.utcfromtimestamp(os.path.getctime(os.path.join(image_folder, date_dir, event)))
+            if (datetime.utcnow() - event_date) > offset:
+                continue
             for file in sorted(os.listdir(os.path.join(image_folder, date_dir, event))):
                 img_file = str(os.path.join(image_folder, date_dir, event, file))
                 if img_file.endswith('.jpg') and 'snapshot' not in img_file:
@@ -75,17 +87,19 @@ def create_timelapse(image_folder, output_name, frame_skip=0, days_since_today=5
                         frame_skip_counter += 1
                         continue
                     if frame_skip_counter > frame_skip:
-                        if daytime_only:
-                            date = datetime.utcfromtimestamp(os.path.getctime(img_file)).time()
-                            if is_time_between(time(11, 00), time(21, 30), check_time=date):
+                        date = datetime.utcfromtimestamp(os.path.getctime(img_file))
+                        date_est = date - timedelta(hours=4)
+                        if (datetime.utcnow() - date) < offset:
+                            if daytime_only:
+                                if is_time_between(time(sunrise, 00), time(sunset, 00), check_time=date_est.time()):
+                                    frame_skip_counter = 0
+                                    frame_count += 1
+                                    ffpeg_image_str += 'file \'{}\' \n'.format(img_file)
+                            else:
+                                # print(img_file)
                                 frame_skip_counter = 0
                                 frame_count += 1
                                 ffpeg_image_str += 'file \'{}\' \n'.format(img_file)
-                        else:
-                            # print(img_file)
-                            frame_skip_counter = 0
-                            frame_count += 1
-                            ffpeg_image_str += 'file \'{}\' \n'.format(img_file)
 
     text_file = open('.image_list.temp', "wt")
     text_file.write(ffpeg_image_str)
@@ -95,11 +109,11 @@ def create_timelapse(image_folder, output_name, frame_skip=0, days_since_today=5
     ffmpeg_str = ''
     if cuda:
         ffmpeg_str = '{ffmpeg_binary} -threads 8 -hwaccel cuvid -c:v mjpeg_cuvid -r {fps} -y -safe 0 ' '-f concat' \
-                     ' -i .image_list.temp -c:v {codec} -c:a ac3 -preset slow -b:v {bitrate} GPU_{final_name}' \
-            .format(ffmpeg_binary=ffmpeg_binary, fps=fps, codec=codec, bitrate=bitrate, final_name=final_name)
+                     ' -i .image_list.temp -c:v {codec} -c:a ac3 -preset medium GPU_{final_name}' \
+            .format(ffmpeg_binary=ffmpeg_binary, fps=fps, codec=codec, final_name=final_name)
     else:
-        ffmpeg_str = '{ffmpeg_binary} -r {fps} -y -safe 0 -f concat -i .image_list.temp -c:v {codec} -b:v {bitrate} {final_name}' \
-            .format(ffmpeg_binary=ffmpeg_binary, fps=fps, codec=codec, final_name=final_name, bitrate=bitrate)
+        ffmpeg_str = '{ffmpeg_binary} -r {fps} -y -safe 0 -f concat -i .image_list.temp -preset fast -c:v {codec} -crf {quality} {final_name}' \
+            .format(ffmpeg_binary=ffmpeg_binary, fps=fps, codec=codec, quality=quality, final_name=final_name)
     with click.progressbar(length=frame_count,
                            label='Rendering Timelapse') as bar:
         print(ffmpeg_str)
@@ -117,7 +131,8 @@ def create_timelapse(image_folder, output_name, frame_skip=0, days_since_today=5
                         curr_frame_count = int(frame[0]) - last_frame_count
                         last_frame_count = int(frame[0])
                         bar.update(curr_frame_count)
-
+                else:
+                    print(line)
 
             # set returncode if the process has exited
             process.poll()
