@@ -70,7 +70,7 @@ def create_timelapse(image_folder, output_name, frame_skip=0, days_since_today=5
             # print(event)
             for file in sorted(os.listdir(os.path.join(image_folder, date_dir, event))):
                 img_file = str(os.path.join(image_folder, date_dir, event, file))
-                if img_file.endswith('.jpg'):
+                if img_file.endswith('.jpg') and 'snapshot' not in img_file:
                     if frame_skip_counter <= frame_skip:
                         frame_skip_counter += 1
                         continue
@@ -102,6 +102,7 @@ def create_timelapse(image_folder, output_name, frame_skip=0, days_since_today=5
             .format(ffmpeg_binary=ffmpeg_binary, fps=fps, codec=codec, final_name=final_name, bitrate=bitrate)
     with click.progressbar(length=frame_count,
                            label='Rendering Timelapse') as bar:
+        print(ffmpeg_str)
         process = subprocess.Popen(ffmpeg_str, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                    universal_newlines=True)
         last_frame_count = 0
